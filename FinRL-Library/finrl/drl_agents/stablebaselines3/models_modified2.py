@@ -7,7 +7,7 @@ import pandas as pd
 from finrl.apps import config
 from finrl.finrl_meta.env_stock_trading.env_stocktrading import StockTradingEnv
 from finrl.finrl_meta.preprocessor.preprocessors import data_split
-from stable_baselines3 import A2C, DDPG, PPO, SAC, TQC
+from stable_baselines3 import A2C, DDPG, PPO, SAC, DQN
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.noise import (
     NormalActionNoise,
@@ -17,7 +17,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 
 
 
-MODELS = {"a2c": A2C, "ddpg": DDPG, "tqc": TQC, "sac": SAC, "ppo": PPO}
+MODELS = {"a2c": A2C, "ddpg": DDPG, "dqn": DQN, "sac": SAC, "ppo": PPO}
 
 MODEL_KWARGS = {x: config.__dict__[f"{x.upper()}_PARAMS"] for x in MODELS.keys()}
 
@@ -319,9 +319,9 @@ class DRLEnsembleAgent:
         return last_state
 
     def run_ensemble_strategy(
-        self, A2C_model_kwargs, PPO_model_kwargs, DDPG_model_kwargs, TQC_model_kwargs, SAC_model_kwargs, timesteps_dict
+        self, A2C_model_kwargs, PPO_model_kwargs, DDPG_model_kwargs, DQN_model_kwargs, SAC_model_kwargs, timesteps_dict
     ):
-        """Ensemble Strategy that combines PPO, A2C, DDPG, TQC, SAC"""
+        """Ensemble Strategy that combines PPO, A2C, DDPG, DQN, SAC"""
         print("============Start Ensemble Strategy============")
         # for ensemble model, it's necessary to feed the last state
         # of the previous model to the current model as the initial state
@@ -330,7 +330,7 @@ class DRLEnsembleAgent:
         ppo_sharpe_list = []
         ddpg_sharpe_list = []
         a2c_sharpe_list = []
-        tqc_sharpe_list = []
+        dqn_sharpe_list = []
         sac_sharpe_list = []
 
         model_use = []
@@ -606,27 +606,27 @@ class DRLEnsembleAgent:
             )
             sharpe_ddpg = self.get_validation_sharpe(i, model_name="DDPG")
 
-            print("======TQC Training========")
-            model_tqc = self.get_model(
-                "tqc",
+            print("======DQN Training========")
+            model_dqn = self.get_model(
+                "dqn",
                 self.train_env,
                 policy="MlpPolicy",
-                model_kwargs=TQC_model_kwargs,
+                model_kwargs=DQN_model_kwargs,
             )
-            model_tqc = self.train_model(
-                model_tqc,
-                "tqc",
-                tb_log_name="tqc_{}".format(i),
+            model_dqn = self.train_model(
+                model_dqn,
+                "dqn",
+                tb_log_name="dqn_{}".format(i),
                 iter_num=i,
-                total_timesteps=timesteps_dict["tqc"],
+                total_timesteps=timesteps_dict["dqn"],
             )  # 50_000
             print(
-                "======TQC Validation from: ",
+                "======DQN Validation from: ",
                 validation_start_date,
                 "to ",
                 validation_end_date,
             )
-            val_env_tqc = DummyVecEnv(
+            val_env_dqn = DummyVecEnv(
                 [
                     lambda: StockTradingEnv(
                         validation,
@@ -641,20 +641,20 @@ class DRLEnsembleAgent:
                         self.tech_indicator_list,
                         turbulence_threshold=turbulence_threshold,
                         iteration=i,
-                        model_name="TQC",
+                        model_name="DQN",
                         mode="validation",
                         print_verbosity=self.print_verbosity,
                     )
                 ]
             )
-            val_obs_tqc = val_env_tqc.reset()
+            val_obs_dqn = val_env_dqn.reset()
             self.DRL_validation(
-                model=model_tqc,
+                model=model_dqn,
                 test_data=validation,
-                test_env=val_env_tqc,
-                test_obs=val_obs_tqc,
+                test_env=val_env_dqn,
+                test_obs=val_obs_dqn,
             )
-            sharpe_tqc = self.get_validation_sharpe(i, model_name="TQC")
+            sharpe_dqn = self.get_validation_sharpe(i, model_name="DQN")
 
             print("======SAC Training========")
             model_sac = self.get_model(
@@ -709,7 +709,7 @@ class DRLEnsembleAgent:
             ppo_sharpe_list.append(sharpe_ppo)
             a2c_sharpe_list.append(sharpe_a2c)
             ddpg_sharpe_list.append(sharpe_ddpg)
-            tqc_sharpe_list.append(sharpe_tqc)
+            dqn_sharpe_list.append(sharpe_dqn)
             sac_sharpe_list.append(sharpe_sac)
 
             print(
@@ -732,25 +732,25 @@ class DRLEnsembleAgent:
             #                                                    self.tech_indicator_list,
             #                                                    print_verbosity=self.print_verbosity)])
             # Model Selection based on sharpe ratio
-            if (sharpe_ppo >= sharpe_a2c) & (sharpe_ppo >= sharpe_ddpg) & (sharpe_ppo >= sharpe_tqc) & (sharpe_ppo >= sharpe_sac):
+            if (sharpe_ppo >= sharpe_a2c) & (sharpe_ppo >= sharpe_ddpg) & (sharpe_ppo >= sharpe_dqn) & (sharpe_ppo >= sharpe_sac):
                 model_use.append("PPO")
                 model_ensemble = model_ppo
 
                 # model_ensemble = self.get_model("ppo",self.train_full_env,policy="MlpPolicy",model_kwargs=PPO_model_kwargs)
                 # model_ensemble = self.train_model(model_ensemble, "ensemble", tb_log_name="ensemble_{}".format(i), iter_num = i, total_timesteps=timesteps_dict['ppo']) #100_000
-            elif (sharpe_a2c > sharpe_ppo) & (sharpe_a2c > sharpe_ddpg) & (sharpe_a2c > sharpe_tqc) & (sharpe_a2c > sharpe_sac):
+            elif (sharpe_a2c > sharpe_ppo) & (sharpe_a2c > sharpe_ddpg) & (sharpe_a2c > sharpe_dqn) & (sharpe_a2c > sharpe_sac):
                 model_use.append("A2C")
                 model_ensemble = model_a2c
 
                 # model_ensemble = self.get_model("a2c",self.train_full_env,policy="MlpPolicy",model_kwargs=A2C_model_kwargs)
                 # model_ensemble = self.train_model(model_ensemble, "ensemble", tb_log_name="ensemble_{}".format(i), iter_num = i, total_timesteps=timesteps_dict['a2c']) #100_000
-            elif (sharpe_ddpg > sharpe_a2c) & (sharpe_ddpg > sharpe_ppo) & (sharpe_ddpg > sharpe_tqc) & (sharpe_ddpg > sharpe_sac):
+            elif (sharpe_ddpg > sharpe_a2c) & (sharpe_ddpg > sharpe_ppo) & (sharpe_ddpg > sharpe_dqn) & (sharpe_ddpg > sharpe_sac):
                 model_use.append("DDPG")
                 model_ensemble = model_ddpg
             
-            elif (sharpe_tqc > sharpe_a2c) & (sharpe_tqc > sharpe_ppo) & (sharpe_tqc > sharpe_ddpg) & (sharpe_tqc > sharpe_sac):
-                model_use.append("TQC")
-                model_ensemble = model_tqc
+            elif (sharpe_dqn > sharpe_a2c) & (sharpe_dqn > sharpe_ppo) & (sharpe_dqn > sharpe_ddpg) & (sharpe_dqn > sharpe_sac):
+                model_use.append("DQN")
+                model_ensemble = model_dqn
                 
             else:
                 model_use.append("SAC")
@@ -791,7 +791,7 @@ class DRLEnsembleAgent:
                 a2c_sharpe_list,
                 ppo_sharpe_list,
                 ddpg_sharpe_list,
-                tqc_sharpe_list,
+                dqn_sharpe_list,
                 sac_sharpe_list
             ]
         ).T
@@ -803,7 +803,7 @@ class DRLEnsembleAgent:
             "A2C Sharpe",
             "PPO Sharpe",
             "DDPG Sharpe",
-            "TQC Sharpe",
+            "DQN Sharpe",
             "SAC Sharpe"
         ]
 
