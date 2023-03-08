@@ -507,6 +507,56 @@ class DRLEnsembleAgent:
             )
             sharpe_a2c = self.get_validation_sharpe(i, model_name="A2C")
             print("A2C Sharpe Ratio: ", sharpe_a2c)
+            
+            print("======DQN Training========")
+            model_dqn = self.get_model(
+                "dqn",
+                self.train_env,
+                policy="MlpPolicy",
+                model_kwargs=DQN_model_kwargs,
+            )
+            model_dqn = self.train_model(
+                model_dqn,
+                "dqn",
+                tb_log_name="dqn_{}".format(i),
+                iter_num=i,
+                total_timesteps=timesteps_dict["dqn"],
+            )  # 50_000
+            print(
+                "======DQN Validation from: ",
+                validation_start_date,
+                "to ",
+                validation_end_date,
+            )
+            val_env_dqn = DummyVecEnv(
+                [
+                    lambda: StockTradingEnv(
+                        validation,
+                        self.stock_dim,
+                        self.hmax,
+                        self.initial_amount,
+                        self.buy_cost_pct,
+                        self.sell_cost_pct,
+                        self.reward_scaling,
+                        self.state_space,
+                        self.action_space,
+                        self.tech_indicator_list,
+                        turbulence_threshold=turbulence_threshold,
+                        iteration=i,
+                        model_name="DQN",
+                        mode="validation",
+                        print_verbosity=self.print_verbosity,
+                    )
+                ]
+            )
+            val_obs_dqn = val_env_dqn.reset()
+            self.DRL_validation(
+                model=model_dqn,
+                test_data=validation,
+                test_env=val_env_dqn,
+                test_obs=val_obs_dqn,
+            )
+            sharpe_dqn = self.get_validation_sharpe(i, model_name="DQN")
 
             print("======PPO Training========")
             model_ppo = self.get_model(
@@ -606,55 +656,7 @@ class DRLEnsembleAgent:
             )
             sharpe_ddpg = self.get_validation_sharpe(i, model_name="DDPG")
 
-            print("======DQN Training========")
-            model_dqn = self.get_model(
-                "dqn",
-                self.train_env,
-                policy="MlpPolicy",
-                model_kwargs=DQN_model_kwargs,
-            )
-            model_dqn = self.train_model(
-                model_dqn,
-                "dqn",
-                tb_log_name="dqn_{}".format(i),
-                iter_num=i,
-                total_timesteps=timesteps_dict["dqn"],
-            )  # 50_000
-            print(
-                "======DQN Validation from: ",
-                validation_start_date,
-                "to ",
-                validation_end_date,
-            )
-            val_env_dqn = DummyVecEnv(
-                [
-                    lambda: StockTradingEnv(
-                        validation,
-                        self.stock_dim,
-                        self.hmax,
-                        self.initial_amount,
-                        self.buy_cost_pct,
-                        self.sell_cost_pct,
-                        self.reward_scaling,
-                        self.state_space,
-                        self.action_space,
-                        self.tech_indicator_list,
-                        turbulence_threshold=turbulence_threshold,
-                        iteration=i,
-                        model_name="DQN",
-                        mode="validation",
-                        print_verbosity=self.print_verbosity,
-                    )
-                ]
-            )
-            val_obs_dqn = val_env_dqn.reset()
-            self.DRL_validation(
-                model=model_dqn,
-                test_data=validation,
-                test_env=val_env_dqn,
-                test_obs=val_obs_dqn,
-            )
-            sharpe_dqn = self.get_validation_sharpe(i, model_name="DQN")
+            
 
             print("======SAC Training========")
             model_sac = self.get_model(
