@@ -56,7 +56,7 @@ PPO_PARAMS = {
     "batch_size": 64,
 }
 DDPG_PARAMS = {"batch_size": 128, "buffer_size": 50000, "learning_rate": 0.001}
-TD3_PARAMS = {"batch_size": 100, "buffer_size": 1000000, "learning_rate": 0.001}
+DQN_PARAMS = {"batch_size": 64, "buffer_size": 100000, "learning_rate": 0.001}
 SAC_PARAMS = {
     "batch_size": 64,
     "buffer_size": 100000,
