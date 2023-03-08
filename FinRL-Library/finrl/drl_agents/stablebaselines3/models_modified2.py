@@ -7,7 +7,7 @@ import pandas as pd
 from finrl.apps import config
 from finrl.finrl_meta.env_stock_trading.env_stocktrading import StockTradingEnv
 from finrl.finrl_meta.preprocessor.preprocessors import data_split
-from stable_baselines3 import A2C, DDPG, PPO, SAC, TD3
+from stable_baselines3 import A2C, DDPG, PPO, SAC, TQC
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.noise import (
     NormalActionNoise,
@@ -17,7 +17,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 
 
 
-MODELS = {"a2c": A2C, "ddpg": DDPG, "td3": TD3, "sac": SAC, "ppo": PPO}
+MODELS = {"a2c": A2C, "ddpg": DDPG, "tqc": TQC, "sac": SAC, "ppo": PPO}
 
 MODEL_KWARGS = {x: config.__dict__[f"{x.upper()}_PARAMS"] for x in MODELS.keys()}
 
@@ -319,9 +319,9 @@ class DRLEnsembleAgent:
         return last_state
 
     def run_ensemble_strategy(
-        self, A2C_model_kwargs, PPO_model_kwargs, DDPG_model_kwargs, TD3_model_kwargs, SAC_model_kwargs, timesteps_dict
+        self, A2C_model_kwargs, PPO_model_kwargs, DDPG_model_kwargs, TQC_model_kwargs, SAC_model_kwargs, timesteps_dict
     ):
-        """Ensemble Strategy that combines PPO, A2C, DDPG, TD3, SAC"""
+        """Ensemble Strategy that combines PPO, A2C, DDPG, TQC, SAC"""
         print("============Start Ensemble Strategy============")
         # for ensemble model, it's necessary to feed the last state
         # of the previous model to the current model as the initial state
@@ -330,7 +330,7 @@ class DRLEnsembleAgent:
         ppo_sharpe_list = []
         ddpg_sharpe_list = []
         a2c_sharpe_list = []
-        td3_sharpe_list = []
+        tqc_sharpe_list = []
         sac_sharpe_list = []
 
         model_use = []
@@ -371,14 +371,14 @@ class DRLEnsembleAgent:
                 initial = False
 
             # Tuning trubulence index based on historical data
-            # Turbulence lookback window is one quarter (63 days)
+            # Turbulence lookback window is 2 quarters (126 days)
             end_date_index = self.df.index[
                 self.df["date"]
                 == self.unique_trade_date[
                     i - self.rebalance_window - self.validation_window
                 ]
             ].to_list()[-1]
-            start_date_index = end_date_index - 63 + 1
+            start_date_index = end_date_index - 126 + 1
 
             historical_turbulence = self.df.iloc[
                 start_date_index : (end_date_index + 1), :
@@ -606,27 +606,27 @@ class DRLEnsembleAgent:
             )
             sharpe_ddpg = self.get_validation_sharpe(i, model_name="DDPG")
 
-            print("======TD3 Training========")
-            model_td3 = self.get_model(
-                "td3",
+            print("======TQC Training========")
+            model_tqc = self.get_model(
+                "tqc",
                 self.train_env,
                 policy="MlpPolicy",
-                model_kwargs=TD3_model_kwargs,
+                model_kwargs=TQC_model_kwargs,
             )
-            model_td3 = self.train_model(
-                model_td3,
-                "td3",
-                tb_log_name="td3_{}".format(i),
+            model_tqc = self.train_model(
+                model_tqc,
+                "tqc",
+                tb_log_name="tqc_{}".format(i),
                 iter_num=i,
-                total_timesteps=timesteps_dict["td3"],
+                total_timesteps=timesteps_dict["tqc"],
             )  # 50_000
             print(
-                "======TD3 Validation from: ",
+                "======TQC Validation from: ",
                 validation_start_date,
                 "to ",
                 validation_end_date,
             )
-            val_env_td3 = DummyVecEnv(
+            val_env_tqc = DummyVecEnv(
                 [
                     lambda: StockTradingEnv(
                         validation,
@@ -641,20 +641,20 @@ class DRLEnsembleAgent:
                         self.tech_indicator_list,
                         turbulence_threshold=turbulence_threshold,
                         iteration=i,
-                        model_name="TD3",
+                        model_name="TQC",
                         mode="validation",
                         print_verbosity=self.print_verbosity,
                     )
                 ]
             )
-            val_obs_td3 = val_env_td3.reset()
+            val_obs_tqc = val_env_tqc.reset()
             self.DRL_validation(
-                model=model_td3,
+                model=model_tqc,
                 test_data=validation,
-                test_env=val_env_td3,
-                test_obs=val_obs_td3,
+                test_env=val_env_tqc,
+                test_obs=val_obs_tqc,
             )
-            sharpe_td3 = self.get_validation_sharpe(i, model_name="TD3")
+            sharpe_tqc = self.get_validation_sharpe(i, model_name="TQC")
 
             print("======SAC Training========")
             model_sac = self.get_model(
@@ -709,7 +709,7 @@ class DRLEnsembleAgent:
             ppo_sharpe_list.append(sharpe_ppo)
             a2c_sharpe_list.append(sharpe_a2c)
             ddpg_sharpe_list.append(sharpe_ddpg)
-            td3_sharpe_list.append(sharpe_td3)
+            tqc_sharpe_list.append(sharpe_tqc)
             sac_sharpe_list.append(sharpe_sac)
 
             print(
@@ -732,25 +732,25 @@ class DRLEnsembleAgent:
             #                                                    self.tech_indicator_list,
             #                                                    print_verbosity=self.print_verbosity)])
             # Model Selection based on sharpe ratio
-            if (sharpe_ppo >= sharpe_a2c) & (sharpe_ppo >= sharpe_ddpg) & (sharpe_ppo >= sharpe_td3) & (sharpe_ppo >= sharpe_sac):
+            if (sharpe_ppo >= sharpe_a2c) & (sharpe_ppo >= sharpe_ddpg) & (sharpe_ppo >= sharpe_tqc) & (sharpe_ppo >= sharpe_sac):
                 model_use.append("PPO")
                 model_ensemble = model_ppo
 
                 # model_ensemble = self.get_model("ppo",self.train_full_env,policy="MlpPolicy",model_kwargs=PPO_model_kwargs)
                 # model_ensemble = self.train_model(model_ensemble, "ensemble", tb_log_name="ensemble_{}".format(i), iter_num = i, total_timesteps=timesteps_dict['ppo']) #100_000
-            elif (sharpe_a2c > sharpe_ppo) & (sharpe_a2c > sharpe_ddpg) & (sharpe_a2c > sharpe_td3) & (sharpe_a2c > sharpe_sac):
+            elif (sharpe_a2c > sharpe_ppo) & (sharpe_a2c > sharpe_ddpg) & (sharpe_a2c > sharpe_tqc) & (sharpe_a2c > sharpe_sac):
                 model_use.append("A2C")
                 model_ensemble = model_a2c
 
                 # model_ensemble = self.get_model("a2c",self.train_full_env,policy="MlpPolicy",model_kwargs=A2C_model_kwargs)
                 # model_ensemble = self.train_model(model_ensemble, "ensemble", tb_log_name="ensemble_{}".format(i), iter_num = i, total_timesteps=timesteps_dict['a2c']) #100_000
-            elif (sharpe_ddpg > sharpe_a2c) & (sharpe_ddpg > sharpe_ppo) & (sharpe_ddpg > sharpe_td3) & (sharpe_ddpg > sharpe_sac):
+            elif (sharpe_ddpg > sharpe_a2c) & (sharpe_ddpg > sharpe_ppo) & (sharpe_ddpg > sharpe_tqc) & (sharpe_ddpg > sharpe_sac):
                 model_use.append("DDPG")
                 model_ensemble = model_ddpg
             
-            elif (sharpe_td3 > sharpe_a2c) & (sharpe_td3 > sharpe_ppo) & (sharpe_td3 > sharpe_ddpg) & (sharpe_td3 > sharpe_sac):
-                model_use.append("TD3")
-                model_ensemble = model_td3
+            elif (sharpe_tqc > sharpe_a2c) & (sharpe_tqc > sharpe_ppo) & (sharpe_tqc > sharpe_ddpg) & (sharpe_tqc > sharpe_sac):
+                model_use.append("TQC")
+                model_ensemble = model_tqc
                 
             else:
                 model_use.append("SAC")
@@ -791,19 +791,19 @@ class DRLEnsembleAgent:
                 a2c_sharpe_list,
                 ppo_sharpe_list,
                 ddpg_sharpe_list,
-                td3_sharpe_list,
+                tqc_sharpe_list,
                 sac_sharpe_list
             ]
         ).T
         df_summary.columns = [
-            "Iter",
+            "Iteration",
             "Val Start",
             "Val End",
             "Model Used",
             "A2C Sharpe",
             "PPO Sharpe",
             "DDPG Sharpe",
-            "TD3 Sharpe",
+            "TQC Sharpe",
             "SAC Sharpe"
         ]
 
